@@ -115,23 +115,20 @@ public class TestResultTest {
             for (File report : testReports) {
                 Match document = $($(report).document());
 
-                failedArchitectureTests.addAll(getFailedTests(document.find("testcase")));
+                failedArchitectureTests.addAll(getFailedTests(document));
             }
             markProcessed(testReports);
         }
 
-        Set<SingleTest> getFailedTests(Match testCaseTags) {
+        Set<SingleTest> getFailedTests(Match document) {
+            String testClass = toSimpleClassName(document.xpath("/testsuite").attr("name"));
+            Match testCaseTags = document.find("testcase");
+
             validateAllArchitectureFailures(testCaseTags);
 
-            List<String> classNames = testCaseTags.attrs("classname");
-            List<String> testNames = testCaseTags.attrs("name");
-            if (classNames.size() != testNames.size()) {
-                throw new RuntimeException("Unexpected attrs mismatch, expected the same size: " + classNames + " <-> " + testNames);
-            }
-
             Set<SingleTest> result = new HashSet<>();
-            for (int i = 0; i < classNames.size(); i++) {
-                result.add(new SingleTest(toSimpleClassName(classNames.get(i)), testNames.get(i)));
+            for (String testName : testCaseTags.attrs("name")) {
+                result.add(new SingleTest(testClass, testName));
             }
             return result;
         }
@@ -152,20 +149,7 @@ public class TestResultTest {
         }
 
         void assertMatchWith(GivenTestClasses givenTestClasses) {
-            Set<SingleTest> onlyGiven = difference(givenTestClasses.tests, failedArchitectureTests);
-            assertThat(onlyGiven).as("Tests that were expected to fail, but didn't").isEmpty();
-            Set<SingleTest> onlyFailed = difference(failedArchitectureTests, givenTestClasses.tests);
-            assertThat(onlyFailed).as("Tests that unexpectedly failed").isEmpty();
-        }
-
-        private <T> Set<T> difference(Set<T> set, Set<T> toSubtract) {
-            Set<T> result = new HashSet<>();
-            for (T elem : set) {
-                if (!toSubtract.contains(elem)) {
-                    result.add(elem);
-                }
-            }
-            return result;
+            assertThat(failedArchitectureTests).as("actual failures").hasSameElementsAs(givenTestClasses.tests);
         }
 
         void markProcessed(List<File> testReports) {
