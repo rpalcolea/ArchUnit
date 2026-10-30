@@ -3,6 +3,7 @@ package com.tngtech.archunit.lang.conditions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -14,10 +15,16 @@ import org.junit.Test;
 
 import static com.tngtech.archunit.base.DescribedPredicate.alwaysFalse;
 import static com.tngtech.archunit.base.DescribedPredicate.alwaysTrue;
+import static com.tngtech.archunit.base.DescribedPredicate.describe;
 import static com.tngtech.archunit.core.domain.JavaConstructor.CONSTRUCTOR_NAME;
 import static com.tngtech.archunit.core.domain.TestUtils.importClasses;
 import static com.tngtech.archunit.testutil.Assertions.assertThat;
 import static java.util.stream.Collectors.toSet;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 public class JavaAccessConditionTest {
     @Test
@@ -53,6 +60,39 @@ public class JavaAccessConditionTest {
         assertThatOnlyAccessToSomeClassFor(clazz, new JavaAccessCondition<>(alwaysFalse()))
                 .haveOneViolationMessageContaining(ClassCallingMethod.class.getSimpleName() + ".call()")
                 .haveOneViolationMessageContaining(SomeClass.class.getSimpleName() + ".method");
+    }
+
+    @Test
+    public void checks_predicate_immediately_but_describes_access_only_on_demand() {
+        for (boolean satisfied : new boolean[]{true, false}) {
+            JavaAccess<?> access = mock(JavaAccess.class);
+            when(access.getDescription()).thenReturn("access description");
+            AtomicInteger checks = new AtomicInteger();
+            JavaAccessCondition<JavaAccess<?>> condition = new JavaAccessCondition<>(describe("matches", item -> {
+                assertThat(item).isSameAs(access);
+                checks.incrementAndGet();
+                return satisfied;
+            }));
+            ViolatedAndSatisfiedConditionEvents events = new ViolatedAndSatisfiedConditionEvents();
+
+            condition.check(access, events);
+
+            assertThat(checks).hasValue(1);
+            assertThat(events.containViolation()).isEqualTo(!satisfied);
+            ConditionEvent event = (satisfied ? events.getAllowed() : events.getViolating()).iterator().next();
+            assertThat(event.invert().isViolation()).isEqualTo(satisfied);
+            assertThat(event.invert().invert().isViolation()).isEqualTo(!satisfied);
+            verify(access, never()).getDescription();
+
+            assertThat(event.getDescriptionLines()).containsExactly("access description");
+            event.handleWith((objects, message) -> {
+                assertThat(objects.toArray()).containsExactly(access);
+                assertThat(message).isEqualTo("access description");
+            });
+            assertThat(event.getDescriptionLines()).containsExactly("access description");
+            verify(access, times(1)).getDescription();
+            assertThat(checks).hasValue(1);
+        }
     }
 
     @Test

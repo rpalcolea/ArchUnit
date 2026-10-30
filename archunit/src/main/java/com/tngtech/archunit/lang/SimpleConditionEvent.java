@@ -68,7 +68,7 @@ public final class SimpleConditionEvent implements ConditionEvent {
 
     private String message() {
         String result = message;
-        if (result == null) {
+        if (result == null && messageSupplier != null) {
             result = messageSupplier.get();
             checkNonEmptyIfViolation(result);
             message = result;
@@ -88,7 +88,7 @@ public final class SimpleConditionEvent implements ConditionEvent {
     @Override
     public ConditionEvent invert() {
         String alreadyComputed = message;
-        return alreadyComputed != null
+        return alreadyComputed != null || messageSupplier == null
                 ? new SimpleConditionEvent(correspondingObject, !conditionSatisfied, alreadyComputed)
                 : new SimpleConditionEvent(correspondingObject, !conditionSatisfied, messageSupplier);
     }

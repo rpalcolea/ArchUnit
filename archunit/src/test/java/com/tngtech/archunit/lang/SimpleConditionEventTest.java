@@ -1,8 +1,10 @@
 package com.tngtech.archunit.lang;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import org.junit.Test;
 
@@ -93,6 +95,43 @@ public class SimpleConditionEventTest {
         List<Object> expectedHandled = new ArrayList<>();
         expected.handleWith((objects, message) -> expectedHandled.add(objects + message));
         assertThat(actualHandled).isEqualTo(expectedHandled);
+    }
+
+    @Test
+    public void satisfied_event_with_null_constant_message_preserves_existing_behavior() {
+        ConditionEvent event = SimpleConditionEvent.satisfied("obj", (String) null);
+
+        assertThat(event.isViolation()).isFalse();
+        assertThat(event.getDescriptionLines()).containsExactly((String) null);
+        List<String> messages = new ArrayList<>();
+        event.handleWith((objects, message) -> messages.add(message));
+        assertThat(messages).containsExactly((String) null);
+        assertThat(event.toString()).contains("message=null");
+        assertThatThrownBy(event::invert).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    public void each_message_consumer_can_trigger_lazy_rendering() {
+        List<Consumer<ConditionEvent>> consumers = Arrays.asList(
+                event -> assertThat(event.getDescriptionLines()).containsExactly("message"),
+                event -> event.handleWith((objects, message) -> {
+                    assertThat(objects.toArray()).containsExactly("obj");
+                    assertThat(message).isEqualTo("message");
+                }),
+                event -> assertThat(event.toString()).contains("message=message"));
+
+        for (Consumer<ConditionEvent> consumer : consumers) {
+            AtomicInteger supplied = new AtomicInteger();
+            ConditionEvent event = SimpleConditionEvent.violated("obj", () -> {
+                supplied.incrementAndGet();
+                return "message";
+            });
+            assertThat(supplied).hasValue(0);
+            consumer.accept(event);
+            assertThat(supplied).hasValue(1);
+            consumer.accept(event);
+            assertThat(supplied).hasValue(1);
+        }
     }
 
     @Test
